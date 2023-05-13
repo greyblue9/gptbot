@@ -2,3 +2,4 @@ disnake
 aiohttp
 python-dotenv
 requests
+https://github.com/greyblue9/disnake-slash/archive/master.zip
