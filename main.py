@@ -198,7 +198,7 @@ class GptBot(commands.Cog):
       except Exception as e:
         if "Too Many Requests" in str(e):
           print("Waiting 2s ...")
-          await asyncio.sleep(2000)
+          await asyncio.sleep(2.0)
           continue
         import traceback
         print(
