@@ -103,22 +103,105 @@ except ImportError:
 import requests
 
 from os import environ
-from disnake.ext.commands import *
+from disnake import (
+  ApplicationCommand,
+  ApplicationCommandInteraction,
+  Attachment,
+  Button,
+  CmdInteraction,
+  Color,
+  CommandInteraction,
+  Component,
+  DMChannel,
+  Embed,
+  Emoji,
+  File,
+  Guild,
+  Interaction,
+  InteractionReference,
+  InteractionMessage,
+  InteractionResponse,
+  Member,
+  Message,
+  MessageCommandInteraction,
+  MessageInteraction,
+  MessageReference,
+  PartialMessage,
+  RawMessageUpdateEvent,
+  TextChannel,
+  SlashCommand,
+)
+from disnake.ext.commands import Cog, Context
 from disnake.ext import *
+from typing import Dict
 
-class GptBot(commands.Cog):
-
+class GptBot(Cog):
+  reply_cache: Dict[int, Message]
+  ctx_cache: Dict[int, Context]
+  actor_cache: Dict[int, str]
+  
   def __init__(self, bot: commands.Bot):
     self.bot = bot
+    self.reply_cache = {}
+    self.ctx_cache = {}
+    self.actor_cache = {}
 
   @commands.Cog.listener()
   async def on_ready(self):
     """show message when bot gets online"""
     print('+ Bot is running!')
   
+  @commands.Cog.listener()
+  async def on_message(self, message: Message):
+    if (
+      message.reference is None
+      or message.author.id == self.bot.user.id
+      or message.content.startswith(".")
+      or "gpt" not in message.channel.name
+      or not message.reference.cached_message.author.id == self.bot.user.id
+    ):
+      return
+    print(f"+ on_message({message = })")
+    orig = message.reference.cached_message.reference.cached_message
+    print(f"{orig = }")
+    
+    if (
+      orig.id in self.reply_cache
+      and not message.content.startswith(".")
+    ):
+      reply = None
+      actor = self.actor_cache[orig.id]
+      ctx = Context(bot=self.bot, view=None, message=message)
+      return await self.gpt_common(
+        ctx=ctx,
+        actor=actor,
+        reply=reply
+      )
+    return
+  
   @commands.slash_command(name="ping")
   async def ping(inter):
     await inter.response.send_message("Pong!")
+    
+  @commands.Cog.listener()
+  async def on_raw_message_edit(
+    self,
+    payload: disnake.RawMessageUpdateEvent
+  ):
+    print(f"{payload = }")
+    if payload.cached_message is None:
+      return
+    msg: disnake.Message = payload.cached_message
+    if not msg.id in self.reply_cache:
+      print("Not found in cache")
+      return
+    reply: disnake.Message = self.reply_cache[msg.id]
+    print(f"{reply = }")
+    return await self.gpt_common(
+      ctx=self.ctx_cache[msg.id],
+      actor=self.actor_cache[msg.id],
+      reply=reply
+    )
   
   @commands.command()
   async def gpt(self, ctx: Context):
@@ -135,12 +218,24 @@ class GptBot(commands.Cog):
     """Query GPT API"""
     return await self.gpt_common(ctx=ctx, actor="gptdan")
   
-  async def gpt_common(self, ctx: Context, actor: str="gpt"):
+  async def gpt_common(self, ctx: Context, actor: str="gpt", reply=None):
     actor_name = actor.removeprefix("gpt").capitalize()
     if not actor_name:
       actor_name = "ChatGPT"
     
-    msg = await ctx.reply(f"{actor_name} is thinking...")
+    if reply is None:
+      msg = await ctx.reply(f"{actor_name} is thinking...")
+      self.reply_cache[ctx.message.id] = msg
+      self.ctx_cache[ctx.message.id] = ctx
+      self.actor_cache[ctx.message.id] = actor
+    else:
+      msg = reply
+      msg = (
+        await reply.edit(
+          content=f"{actor_name} is thinking..."
+        )
+      ) or reply
+    
     d = {**d_defaults}
     message = ctx.message.content.removeprefix(
       f".{actor}"
@@ -149,8 +244,8 @@ class GptBot(commands.Cog):
     if actor not in msgs:
       msgs[actor] = {}
       
-    if ctx.author.name not in msgs[actor] or message == "reset":
-      msgs[actor][ctx.author.name] = []
+    if ctx.author.nick not in msgs[actor] or message == "reset":
+      msgs[actor][ctx.author.nick] = []
     
     if message == "reset":
       return await msg.edit(
@@ -158,16 +253,16 @@ class GptBot(commands.Cog):
       )
     
     if (
-      len(msgs[actor][ctx.author.name]) == 0 
+      len(msgs[actor][ctx.author.nick]) == 0 
       or defaults[actor]["repeat_initial"]
     ):
       for dm in defaults[actor]["messages"]:
         m = {**dm}
         for k, v in {
-          "author_name": ctx.author.name,
+          "author_name": ctx.author.nick,
         }.items():
           m["content"] = m["content"].replace(f"{{{k}}}", v)
-        msgs[actor][ctx.author.name].append(m)
+        msgs[actor][ctx.author.nick].append(m)
     
     author: Member = ctx.author
     channel = ctx.message.channel
@@ -198,13 +293,15 @@ class GptBot(commands.Cog):
       ):
         d["frequency_penalty"] = float(val)
       else:
-        return await msg.edit(
+        edited = msg.edit(
           content=f"Unknown parameter: '{kw}'",
           delete_after=2
         )
+        self.reply_cache[ctx.message.id] = edited
+        return edited
       message = message.strip()[len(wds[0]):].strip()
     
-    d["messages"] = msgs[actor][ctx.author.name]
+    d["messages"] = msgs[actor][ctx.author.nick]
     if defaults[actor]["wrapper"]:
       d["messages"].append({
         "role": role,
@@ -241,9 +338,9 @@ class GptBot(commands.Cog):
           ))
       except HTTPError as he:
         if he.code == HTTPCode.BAD_REQUEST.value:
-          ntok1 = token_count(msgs[actor][ctx.author.name])
+          ntok1 = token_count(msgs[actor][ctx.author.nick])
           print(f"Too many tokens ({ntok1}) ...")
-          ntok2 = trim_messages(msgs[actor][ctx.author.name])
+          ntok2 = trim_messages(msgs[actor][ctx.author.nick])
           if ntok1 == ntok2:
             raise
           print(
@@ -260,9 +357,10 @@ class GptBot(commands.Cog):
           sep="\n",
           file=sys.stderr
         )
-        return await msg.edit(
+        edited = await msg.edit(
           content=str(e)
         )
+        self.reply_cache[ctx.message.id] = edited
       else:
         break
     
@@ -292,7 +390,7 @@ class GptBot(commands.Cog):
     print()
     print(x, sep="\n")
     if "I cannot " not in x and not x.startswith("Sorry"):
-      msgs[actor][ctx.author.name].append({
+      msgs[actor][ctx.author.nick].append({
         "role": "assistant",
         "content": x  
       })
