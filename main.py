@@ -1,5 +1,32 @@
 #!/data/data/com.termux/files/usr/bin/env python3
 
+import re
+from enum import IntEnum
+from urllib.error import HTTPError
+
+class HTTPCode(IntEnum):
+  BAD_REQUEST = 400
+  TOO_MANY_REQUESTS = 429
+  
+def token_count(message_list):
+  splitter = re.compile(
+    "((?:[\\w'-]+|(?!\\s)[\\W]+))", re.DOTALL
+  )
+  return sum([
+    len(splitter.findall(m["content"]))
+    for m in message_list
+  ])
+
+def trim_messages(message_list):
+  prev = cur = 0
+  while (
+    (cur := token_count(message_list)) > 4096
+    and prev != cur
+  ):
+    prev = cur
+    message_list[1:2] = []
+  return cur
+
 d_defaults = {
   "model": "gpt-3.5-turbo",
   "temperature": 1.2,
@@ -194,12 +221,23 @@ class GptBot(commands.Cog):
             url,
             headers={
               "Content-Type": "application/json",
-              "Authorization": f"Bearer {environ['OPENAI_API_KEY']}",
+              "Authorization": 
+              f"Bearer {environ['OPENAI_API_KEY']}",
             },
             data=json.dumps(d).encode("utf-8"),
           ))
-      except Exception as e:
-        if "Too Many Requests" in str(e):
+      except HTTPError as he:
+        if he.code == HTTPCode.BAD_REQUEST.value:
+          ntok1 = token_count(msgs[actor][ctx.author.name])
+          print(f"Too many tokens ({ntok1}) ...")
+          ntok2 = trim_messages(msgs[actor][ctx.author.name])
+          if ntok1 == ntok2:
+            raise
+          print(
+            f"Retrying with {ntok1} -> {ntok2} tokens ..."
+          )
+          continue
+        if he.code == HTTPCode.TOO_MANY_REQUESTS.value:
           print("Waiting 2s ...")
           await asyncio.sleep(2.0)
           continue
