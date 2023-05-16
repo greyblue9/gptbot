@@ -171,6 +171,17 @@ class GptBot(Cog):
       actor=self.actor_cache[msg.id],
       reply=reply
     )
+
+  @commands.Cog.listener()
+  async def on_message(self, message):
+    """listens for any message events, and checks if the message is a reply to a bot message. If it is, the bot sends a reply thanking the user for responding to its message. Note that this code assumes that you have already set up your bot token and added the bot to your server."""
+    if message.author.bot:
+        return
+    if message.reference:
+        original_message = await message.channel.fetch_message(message.reference.message_id)
+        if original_message.author == self.bot.user:
+            await message.channel.send(f"Thanks for replying to my message, {message.author.mention}!")
+    # await bot.process_commands(message)
   
   @commands.command()
   async def gpt(self, ctx: Context):
