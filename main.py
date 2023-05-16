@@ -156,10 +156,7 @@ class GptBot(Cog):
     await inter.response.send_message("Pong!")
     
   @commands.Cog.listener()
-  async def on_raw_message_edit(
-    self,
-    payload: disnake.RawMessageUpdateEvent
-  ):
+  async def on_raw_message_edit(self, payload: RawMessageUpdateEvent):
     print(f"{payload = }")
     if payload.cached_message is None:
       return
@@ -216,8 +213,8 @@ class GptBot(Cog):
     if actor not in msgs:
       msgs[actor] = {}
       
-    if ctx.author.nick not in msgs[actor] or message == "reset":
-      msgs[actor][ctx.author.nick] = []
+    if ctx.author.name not in msgs[actor] or message == "reset":
+      msgs[actor][ctx.author.name] = []
     
     if message == "reset":
       return await msg.edit(
@@ -225,16 +222,16 @@ class GptBot(Cog):
       )
     
     if (
-      len(msgs[actor][ctx.author.nick]) == 0 
+      len(msgs[actor][ctx.author.name]) == 0 
       or defaults[actor]["repeat_initial"]
     ):
       for dm in defaults[actor]["messages"]:
         m = {**dm}
         for k, v in {
-          "author_name": ctx.author.nick,
+          "author_name": ctx.author.name,
         }.items():
           m["content"] = m["content"].replace(f"{{{k}}}", v)
-        msgs[actor][ctx.author.nick].append(m)
+        msgs[actor][ctx.author.name].append(m)
     
     author: Member = ctx.author
     channel = ctx.message.channel
@@ -273,7 +270,7 @@ class GptBot(Cog):
         return edited
       message = message.strip()[len(wds[0]):].strip()
     
-    d["messages"] = msgs[actor][ctx.author.nick]
+    d["messages"] = msgs[actor][ctx.author.name]
     if defaults[actor]["wrapper"]:
       d["messages"].append({
         "role": role,
@@ -310,9 +307,9 @@ class GptBot(Cog):
           ))
       except HTTPError as he:
         if he.code == HTTPCode.BAD_REQUEST.value:
-          ntok1 = token_count(msgs[actor][ctx.author.nick])
+          ntok1 = token_count(msgs[actor][ctx.author.name])
           print(f"Too many tokens ({ntok1}) ...")
-          ntok2 = trim_messages(msgs[actor][ctx.author.nick])
+          ntok2 = trim_messages(msgs[actor][ctx.author.name])
           if ntok1 == ntok2:
             raise
           print(
@@ -362,7 +359,7 @@ class GptBot(Cog):
     print()
     print(x, sep="\n")
     if "I cannot " not in x and not x.startswith("Sorry"):
-      msgs[actor][ctx.author.nick].append({
+      msgs[actor][ctx.author.name].append({
         "role": "assistant",
         "content": x  
       })
