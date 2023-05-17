@@ -1,5 +1,7 @@
 disnake
 aiohttp
 python-dotenv
-requests
-https://github.com/greyblue9/disnake-slash/archive/master.zip
+demoji
+watchdog
+bs4
+nest-asyncio
