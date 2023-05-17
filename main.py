@@ -18,13 +18,25 @@ def token_count(message_list):
   ])
 
 def trim_messages(message_list):
-  prev = cur = 0
-  while (
-    (cur := token_count(message_list)) > 4096
-    and prev != cur
-  ):
+  print(f"trimming messages; n = {len(message_list)}")
+  initial = token_count(message_list)
+  print(f"{initial = }")
+  cur = initial
+  prev = 0
+  while True:
     prev = cur
     message_list[1:2] = []
+    print(f"new n = {len(message_list)}")
+    cur = token_count(message_list)
+    print(f"new {cur = }")
+    if prev == cur:
+      return cur
+    if initial >= 4096:
+      if cur >= 4096:
+        continue
+      return cur
+    else:
+      break
   return cur
 
 d_defaults = {
@@ -173,15 +185,47 @@ class GptBot(Cog):
     )
 
   @commands.Cog.listener()
-  async def on_message(self, message):
-    """listens for any message events, and checks if the message is a reply to a bot message. If it is, the bot sends a reply thanking the user for responding to its message. Note that this code assumes that you have already set up your bot token and added the bot to your server."""
+  async def on_message(self, message: Message):
+    """listens for any message events, and checks if the message is a reply to a bot message. If it is, the bot sends a reply"""
     if message.author.bot:
+      return
+    if not message.reference:
+      return
+    cur = message
+    orig_content = ""
+    while cur and not cur.content.strip().startswith("."):
+      orig_bot_msg: Message = (
+        await cur.channel.fetch_message(
+          cur.reference.message_id
+        )
+      )
+      if orig_bot_msg.author != self.bot.user:
         return
-    if message.reference:
-        original_message = await message.channel.fetch_message(message.reference.message_id)
-        if original_message.author == self.bot.user:
-            await message.channel.send(f"Thanks for replying to my message, {message.author.mention}!")
-    # await bot.process_commands(message)
+      if not orig_bot_msg.reference:
+        return
+      orig_user_msg: Message = (
+        await orig_bot_msg.channel.fetch_message(
+          orig_bot_msg.reference.message_id
+        )
+      )
+      orig_content = orig_user_msg.content.strip()
+      print(f"{orig_content = }")
+      if not orig_content.startswith("."):
+        cur = orig_user_msg
+        continue
+      break
+    cmd_name = orig_content.strip().split()[0].strip(".")
+    cmd_func = getattr(self, cmd_name)
+    if cmd_func is None:
+      return
+    if not orig_content.startswith("."):
+      message.content = [f".{cmd_name} {orig_content}"]
+    return await self.gpt_common(
+      ctx=Context(bot=self.bot, view=None, message=message),
+      actor=cmd_name,
+    )
+  
+  
   
   @commands.command()
   async def gpt(self, ctx: Context):
