@@ -136,6 +136,20 @@ defaults = {
 }
 
 
+
+class DownloadButton(ui.Button):
+    def __init__(self, cog, bot, callback, *args, **kwargs):
+      self.cog = cog
+      self.bot = bot
+      self.callback = callback
+      super().__init__(*args, **kwargs)
+    
+    async def callback(self, interaction):
+      return await self.callback(
+        interaction
+      )
+
+
 """
 GptBot
 A discord bot
@@ -464,23 +478,21 @@ class Gpt(Cog):
       filename="gpt_transcript.txt"
     )
     await interaction.response.send_file(file=file)
-
+    
   @commands.command()
   async def gpt_transcript(self, ctx: Context):
     "command that sends the message with the download button"
-    button: ui.Button = ui.Button(
+    button: DownloadButton = DownloadButton(
+      cog=self,
+      bot=self.bot,
+      callback=self.download_messages_callback,
       label="Download Transcript",
       custom_id="download_messages",
     )
     action_row: ui.ActionRow = ui.ActionRow(button)
-    await ctx.send(
+    return await ctx.send(
       "Click the button below to download all messages "
       "sent by the bot to you.",
       components=[action_row],
-    )
-    # Add the callback function to the bot's message
-    # component callback registry
-    self.bot.add_message_component_callback(
-      self.download_messages_callback
     )
 
