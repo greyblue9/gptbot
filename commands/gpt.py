@@ -1,5 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/env python3
 
+import aiohttp
 import asyncio 
 import json
 import os
@@ -364,10 +365,11 @@ class Gpt(Cog):
     url = f"https://api.openai.com{endp}"
     print(url)
     print(d)
+    dat = None
     while True:
       try:
-        resp = urllib.request.urlopen(
-          urllib.request.Request(
+        async with aiohttp.ClientSession() as session:
+          async with session.post(
             url,
             headers={
               "Content-Type": "application/json",
@@ -375,7 +377,9 @@ class Gpt(Cog):
               f"Bearer {environ['OPENAI_API_KEY']}",
             },
             data=json.dumps(d).encode("utf-8"),
-          ))
+          ) as resp:
+            print(resp.status)
+            dat = await resp.read()
       except HTTPError as he:
         if he.code == HTTPCode.BAD_REQUEST.value:
           ntok1 = token_count(msgs[actor][ctx.author.name])
@@ -404,7 +408,6 @@ class Gpt(Cog):
       else:
         break
     
-    dat = resp.read()
     d2 = json.loads(dat.decode("utf-8"))
     texts = []
     for i, choice in enumerate(d2["choices"]):
