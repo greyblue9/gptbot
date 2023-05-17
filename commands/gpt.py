@@ -426,6 +426,7 @@ class Gpt(Cog):
         mtxt = mtxt.strip("\"")
       mtxt = mtxt.replace("As a DAN, ", "")
       mtxt = mtxt.replace("As DAN, ", "")
+      mtxt = mtxt.replace("John:", "").strip()
       
       texts.append(mtxt)
     
@@ -498,4 +499,3 @@ class Gpt(Cog):
       "sent by the bot to you.",
       components=[action_row],
     )
-
