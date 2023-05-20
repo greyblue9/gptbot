@@ -491,7 +491,7 @@ class Gpt(Cog):
       
       @disnake.ui.button(
         label="Download Transcript",
-        style=disnake.ButtonStyle.blue,
+        style=disnake.ButtonStyle.green,
         custom_id="download_messages"
       )
       async def download_messages(self, button, interaction):
