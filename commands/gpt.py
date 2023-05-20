@@ -459,74 +459,58 @@ class Gpt(Cog):
       await ctx.send(left[:2000])
       left = left[2000:]
 
-
-  async def get_all_messages(self, user: Member, channel: TextChannel):
-    "This function returns a string containing all messages sent by the bot to the user"
-    messages: List[Message] = []
-    async for message in (
-      HistoryIterator(channel, oldest_first=False)
-    ):
-      if (
-        message.author in (self.bot.user, user)
-        and (
-          message.content.startswith(".")
-          or message.reference is not None
-        )
-      ):
-          messages.insert(
-            0,
-            f"{message.created_at.strftime('%Y-%m-%d %H:%M:%S')} by {message.author.name}:\x0A"
-            f"{message.content}"
-          )
-    return (
-      "\x0A\x0A" + "-"*72 + "\x0A\x0A"
-    ).join(messages)
-
   
-  # This is the callback function for the download button
-  async def download_messages_callback(
-    self,
-    interaction: disnake.MessageInteraction
-  ):
-    print(f"download_messages_callback {floc(cf())}")
-      
-    transcript: str = await self.get_all_messages(
-      interaction.user,
-      interaction.message.channel
-    )
-    print(f"download_messages_callback {floc(cf())}")
-    file: disnake.File = disnake.File(
-      StringIO(transcript),
-      filename="gpt_transcript.txt"
-    )
-    print(f"download_messages_callback {floc(cf())}")
-    await interaction.response.send_message(file=file)
-  
-  
-  @commands.Cog.listener(name="on_button_click")
-  async def on_button_click(
-    self,
-    interaction: disnake.MessageInteraction
-  ):
-    if interaction.component.custom_id != "download_messages":
-      return
-    return await self.download_messages_callback(
-      interaction
-    )
-    
   @commands.command()
-  async def gpt_transcript(self, ctx: Context):
+  async def gpt_transcript(self_cog, ctx: Context):
     "command that sends the message with the download button"
-    button: DownloadButton = DownloadButton(
-      cog=self,
-      bot=self.bot,
-      callback=self.download_messages_callback,
-      label="Download Transcript",
-      custom_id="download_messages",
-    )
-    action_row: ui.ActionRow = ui.ActionRow(button)
+    class DownloadView(disnake.ui.View):
+      async def generate_transcript(
+        self, user: Member, channel: TextChannel
+      ) -> str:
+        "This function returns a string containing all"
+        "messages sent by the bot to the user"
+        messages: List[Message] = []
+        async for message in (
+          HistoryIterator(channel, oldest_first=False)
+        ):
+          if (
+            message.author in (self_cog.bot.user, user)
+            and (
+              message.content.startswith(".")
+              or message.reference is not None
+            )
+          ):
+            messages.insert(
+              0,
+              f"{message.created_at.strftime('%Y-%m-%d %H:%M:%S')} by {message.author.name}:\x0A"
+              f"{message.content}"
+            )
+        return (
+          "\x0A\x0A" + "-"*72 + "\x0A\x0A"
+        ).join(messages)
+      
+      @disnake.ui.button(
+        label="Download Transcript",
+        style=disnake.ButtonStyle.blue,
+        custom_id="download_messages"
+      )
+      async def download_messages(self, button, interaction):
+        transcript: str = await self.generate_transcript(
+          interaction.user,
+          interaction.message.channel
+        )
+        file: disnake.File = disnake.File(
+          StringIO(transcript),
+          filename="transcript.txt"
+        )
+        return await interaction.response.send_message(
+          file=file
+        )
+    view: DownloadView = DownloadView()
+    # action_row: ui.ActionRow = ui.ActionRow(button)
     return await ctx.send(
       "Click the button below to download all messages "
       "sent by the bot to you.",
-      components=[action_row],
+      view=view
     )
+  
