@@ -171,6 +171,8 @@ disnake.Client.run = run
 
 class EvtHandler(FileSystemEventHandler):
     def on_any_event(self, evt):
+        if evt.event_type == "opened":
+            return
         print(f"file event {evt = }")
         for fld, val in inspect.getmembers(evt):
             if not isinstance(val, str):

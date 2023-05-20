@@ -1,7 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/env python3
 
 import aiohttp
-import asyncio 
+import asyncio
+import inspect
 import json
 import os
 import re
@@ -9,6 +10,19 @@ import sys
 import urllib.request
 import disnake
 import requests
+import traceback
+
+from pathlib import Path
+from inspect import currentframe as cf, getframeinfo
+from types import (
+  FrameType as Frame,
+  TracebackType as Traceback
+)
+
+def floc(frame: Frame):
+  frame_info: Traceback = getframeinfo(frame)
+  path: Path = Path(frame_info.filename)
+  return f"at {path.name}:{frame_info.lineno}"
 
 from os import environ
 from disnake import (
@@ -39,7 +53,7 @@ from disnake import (
   TextChannel,
   SlashCommand,
 )
-from disnake.ext.commands import Cog, Context
+from disnake.ext.commands import Cog, Context, CommandError
 from disnake.ext import *
 from disnake import ui
 from disnake.iterators import HistoryIterator
@@ -395,7 +409,6 @@ class Gpt(Cog):
           print("Waiting 2s ...")
           await asyncio.sleep(2.0)
           continue
-        import traceback
         print(
           *traceback.format_exception(e),
           sep="\n",
@@ -451,7 +464,7 @@ class Gpt(Cog):
     "This function returns a string containing all messages sent by the bot to the user"
     messages: List[Message] = []
     async for message in (
-      HistoryIterator.from_channel(channel)
+      HistoryIterator(channel, oldest_first=False)
     ):
       if (
         message.author in (self.bot.user, user)
@@ -460,7 +473,8 @@ class Gpt(Cog):
           or message.reference is not None
         )
       ):
-          messages.append(
+          messages.insert(
+            0,
             f"{message.created_at.strftime('%Y-%m-%d %H:%M:%S')} by {message.author.name}:\x0A"
             f"{message.content}"
           )
@@ -468,20 +482,37 @@ class Gpt(Cog):
       "\x0A\x0A" + "-"*72 + "\x0A\x0A"
     ).join(messages)
 
+  
   # This is the callback function for the download button
   async def download_messages_callback(
     self,
     interaction: disnake.MessageInteraction
   ):
+    print(f"download_messages_callback {floc(cf())}")
+      
     transcript: str = await self.get_all_messages(
       interaction.user,
       interaction.message.channel
     )
+    print(f"download_messages_callback {floc(cf())}")
     file: disnake.File = disnake.File(
       StringIO(transcript),
       filename="gpt_transcript.txt"
     )
-    await interaction.response.send_file(file=file)
+    print(f"download_messages_callback {floc(cf())}")
+    await interaction.response.send_message(file=file)
+  
+  
+  @commands.Cog.listener(name="on_button_click")
+  async def on_button_click(
+    self,
+    interaction: disnake.MessageInteraction
+  ):
+    if interaction.component.custom_id != "download_messages":
+      return
+    return await self.download_messages_callback(
+      interaction
+    )
     
   @commands.command()
   async def gpt_transcript(self, ctx: Context):
