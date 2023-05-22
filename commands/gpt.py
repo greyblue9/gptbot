@@ -40,10 +40,10 @@ def split_segments(
   while sep in text[next+min_length:] and (
     next := text.index(sep, next+min_length)
   ):
-    parts.append(text[prev:next].strip())
-    prev = next+1
-  if text[next+1:].strip():
-    parts.append(text[next+1:].strip())
+    parts.append(text[prev:next])
+    prev = next
+  if text[next:].strip():
+    parts.append(text[next:])
   return parts
 
 
