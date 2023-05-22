@@ -12,19 +12,41 @@ import disnake
 import requests
 import traceback
 
-from pathlib import Path
+from enum import IntEnum
+from io import StringIO
 from inspect import currentframe as cf, getframeinfo
+from os import environ
+from pathlib import Path
 from types import (
-  FrameType as Frame,
-  TracebackType as Traceback
+  FrameType as Frame, TracebackType as Traceback
 )
+from typing import List, Dict
+from urllib.error import HTTPError
 
-def floc(frame: Frame):
+
+def floc(frame: Frame) -> str:
   frame_info: Traceback = getframeinfo(frame)
   path: Path = Path(frame_info.filename)
   return f"at {path.name}:{frame_info.lineno}"
+  
+def split_segments(
+  text: str,
+  min_length: int=1024,
+  sep: str="\x0A"
+) -> List[str]:
+  prev: int = 0
+  next: int = 0
+  parts: List[str] = []
+  while sep in text[next+min_length:] and (
+    next := text.index(sep, next+min_length)
+  ):
+    parts.append(text[prev:next].strip())
+    prev = next+1
+  if text[next+1:].strip():
+    parts.append(text[next+1:].strip())
+  return parts
 
-from os import environ
+
 from disnake import (
   ApplicationCommand,
   ApplicationCommandInteraction,
@@ -57,10 +79,6 @@ from disnake.ext.commands import Cog, Context, CommandError
 from disnake.ext import *
 from disnake import ui
 from disnake.iterators import HistoryIterator
-from io import StringIO
-from typing import Dict
-from enum import IntEnum
-from urllib.error import HTTPError
 from __main__ import setup
 
 class HTTPCode(IntEnum):
@@ -377,9 +395,8 @@ class Gpt(Cog):
     
     endp = "/v1/chat/completions"
     url = f"https://api.openai.com{endp}"
-    print(url)
-    print(d)
     dat = None
+    response = None
     while True:
       try:
         async with aiohttp.ClientSession() as session:
@@ -392,7 +409,8 @@ class Gpt(Cog):
             },
             data=json.dumps(d).encode("utf-8"),
           ) as resp:
-            print(resp.status)
+            response = resp
+            print(resp.status, file=sys.stderr)
             dat = await resp.read()
       except HTTPError as he:
         if he.code == HTTPCode.BAD_REQUEST.value:
@@ -422,6 +440,24 @@ class Gpt(Cog):
         break
     
     d2 = json.loads(dat.decode("utf-8"))
+    if not isinstance(d2, dict) or not "choices" in d2:
+      with open("error.txt", "w+", encoding="utf-8") as f:
+        print("=" * 72, file=f)
+        print("data:", file=f)
+        print(json.dumps(d, indent=2), file=f)
+        print("", file=f)
+        print("response:", file=f)
+        print(response, file=f)
+        print(json.dumps(d2, indent=2), file=f)
+        
+      print(json.dumps(d2, indent=2), file=sys.stderr)
+      return await msg.edit(
+        content=(
+          "Something went wrong:\n\n" +
+          json.dumps(d2, indent=2)
+        )
+      )
+    
     texts = []
     for i, choice in enumerate(d2["choices"]):
       if "message" in choice:
@@ -440,7 +476,6 @@ class Gpt(Cog):
       mtxt = mtxt.replace("As a DAN, ", "")
       mtxt = mtxt.replace("As DAN, ", "")
       mtxt = mtxt.replace("John:", "").strip()
-      
       texts.append(mtxt)
     
     x = "\n\n".join(texts)
@@ -449,16 +484,14 @@ class Gpt(Cog):
     if "I cannot " not in x and not x.startswith("Sorry"):
       msgs[actor][ctx.author.name].append({
         "role": "assistant",
-        "content": x  
+        "content": x
       })
+    segments = split_segments(x)
     
-    left = x
-    await msg.edit(content=left[:2000])
-    left = left[2000:]
-    while left:
-      await ctx.send(left[:2000])
-      left = left[2000:]
-
+    edited = await msg.edit(segments[0])
+    for segment in segments[1:]:
+      await ctx.send(segment)
+    return edited
   
   @commands.command()
   async def gpt_transcript(self_cog, ctx: Context):
