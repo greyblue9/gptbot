@@ -398,65 +398,63 @@ class Gpt(Cog):
     dat = None
     response = None
     while True:
-      try:
-        async with aiohttp.ClientSession() as session:
-          async with session.post(
-            url,
-            headers={
-              "Content-Type": "application/json",
-              "Authorization": 
-              f"Bearer {environ['OPENAI_API_KEY']}",
-            },
-            data=json.dumps(d).encode("utf-8"),
-          ) as resp:
-            response = resp
-            print(resp.status, file=sys.stderr)
-            dat = await resp.read()
-      except HTTPError as he:
-        if he.code == HTTPCode.BAD_REQUEST.value:
-          ntok1 = token_count(msgs[actor][ctx.author.name])
-          print(f"Too many tokens ({ntok1}) ...")
-          ntok2 = trim_messages(msgs[actor][ctx.author.name])
-          if ntok1 == ntok2:
-            raise
-          print(
-            f"Retrying with {ntok1} -> {ntok2} tokens ..."
-          )
-          continue
-        if he.code == HTTPCode.TOO_MANY_REQUESTS.value or he.code == 500:
-          print("Waiting 2s ...")
-          await asyncio.sleep(2.0)
-          continue
-        print(
-          *traceback.format_exception(e),
-          sep="\n",
-          file=sys.stderr
-        )
-        edited = await msg.edit(
-          content=str(e)
-        )
-        self.reply_cache[ctx.message.id] = edited
-      else:
-        break
+      async with aiohttp.ClientSession() as session:
+        async with session.post(
+          url,
+          headers={
+            "Content-Type": "application/json",
+            "Authorization": 
+            f"Bearer {environ['OPENAI_API_KEY']}",
+          },
+          data=json.dumps(d).encode("utf-8"),
+        ) as resp:
+          response = resp
+          print(resp.status, file=sys.stderr)
+          dat = await resp.read()
+          if resp.status == 200:
+            break
+          if resp.status == HTTPCode.BAD_REQUEST.value:
+            ntok1 = token_count(msgs[actor][ctx.author.name])
+            print(f"Too many tokens ({ntok1}) ...")
+            ntok2 = trim_messages(msgs[actor][ctx.author.name])
+            if ntok1 == ntok2:
+              return await msg.delete()
+            print(
+              f"Retrying with {ntok1} -> {ntok2} tokens ..."
+            )
+            continue
+          elif resp.status == HTTPCode.TOO_MANY_REQUESTS.value or he.code == 500:
+            print("Waiting 2s ...")
+            await asyncio.sleep(2.0)
+            continue
+          else:
+            print(
+              *traceback.format_exception(e),
+              sep="\n",
+              file=sys.stderr
+            )
+            return await msg.delete()
+      break
     
     d2 = json.loads(dat.decode("utf-8"))
     if not isinstance(d2, dict) or not "choices" in d2:
-      with open("error.txt", "w+", encoding="utf-8") as f:
-        print("=" * 72, file=f)
-        print("data:", file=f)
-        print(json.dumps(d, indent=2), file=f)
-        print("", file=f)
-        print("response:", file=f)
-        print(response, file=f)
-        print(json.dumps(d2, indent=2), file=f)
-        
-      print(json.dumps(d2, indent=2), file=sys.stderr)
-      return await msg.edit(
-        content=(
-          "Something went wrong:\n\n" +
-          json.dumps(d2, indent=2)
+        with open("error.txt", "w+", encoding="utf-8") as f:
+          print("=" * 72, file=f)
+          print("data:", file=f)
+          print(json.dumps(d, indent=2), file=f)
+          print("", file=f)
+          print("response:", file=f)
+          print(response, file=f)
+          print(json.dumps(d2, indent=2), file=f)
+          
+        print(json.dumps(d2, indent=2), file=sys.stderr)
+        return await msg.edit(
+          content=(
+            "Something went wrong:\n\n" +
+            json.dumps(d2, indent=2)
+          )
         )
-      )
+    
     
     texts = []
     for i, choice in enumerate(d2["choices"]):
