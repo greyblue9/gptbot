@@ -423,7 +423,7 @@ class Gpt(Cog):
             f"Retrying with {ntok1} -> {ntok2} tokens ..."
           )
           continue
-        if he.code == HTTPCode.TOO_MANY_REQUESTS.value:
+        if he.code == HTTPCode.TOO_MANY_REQUESTS.value or he.code == 500:
           print("Waiting 2s ...")
           await asyncio.sleep(2.0)
           continue
