@@ -238,6 +238,8 @@ class Gpt(Cog):
         return
       if not message.reference:
         if not message.content.startswith("."):
+          if not "gpt" in message.channel.name:
+            return
           if message.author.id in last_actor_by_uid:
             cmd_name = last_actor_by_uid[message.author.id]
           else:
