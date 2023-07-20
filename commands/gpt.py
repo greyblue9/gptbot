@@ -168,7 +168,8 @@ defaults = {
   }
 }
 
-
+actor_by_mid = {}
+last_actor_by_uid = {}
 
 class DownloadButton(ui.Button):
     def __init__(self, cog, bot, callback, *args, **kwargs):
@@ -236,10 +237,24 @@ class Gpt(Cog):
       if message.content.startswith("."):
         return
       if not message.reference:
-        return
+        if not message.content.startswith("."):
+          if message.author.id in last_actor_by_uid:
+            cmd_name = last_actor_by_uid[message.author.id]
+          else:
+            cmd_name = "gpt"
+          actor_by_mid[message.id] = cmd_name
+          message.content = f".{cmd_name} {message.content}"
+          return await self.gpt_common(
+            ctx=Context(bot=self.bot, view=None, message=message),
+            actor=cmd_name,
+          )
       cur = message
       orig_content = ""
-      while cur and not cur.content.strip().startswith("."):
+      cmd_name = ""
+      while cur and not cmd_name and not cur.content.strip().startswith("."):
+        if cur.id in actor_by_mid:
+          cmd_name = actor_by_mid[cur.id]
+          break
         orig_bot_msg: Message = (
           await cur.channel.fetch_message(
             cur.reference.message_id
@@ -260,12 +275,15 @@ class Gpt(Cog):
           cur = orig_user_msg
           continue
         break
-      cmd_name = orig_content.strip().split()[0].strip(".")
+      cmd_name = (
+        cmd_name or orig_content.strip().split()[0].strip(".")
+      )
       cmd_func = getattr(self, cmd_name)
       if cmd_func is None:
         return
+      orig_content = orig_content or cur.content
       if not orig_content.startswith("."):
-        message.content = [f".{cmd_name} {orig_content}"]
+        message.content = f".{cmd_name} {orig_content}"
       print("calling gpt common {cmd_name = } on:\n  - {message.author.name = }\n  - {message.content = }\n\n")
       return await self.gpt_common(
         ctx=Context(bot=self.bot, view=None, message=message),
@@ -292,12 +310,12 @@ class Gpt(Cog):
     return await self.gpt_common(ctx=ctx, actor="gptdan")
   
   async def gpt_common(self, ctx: Context, actor: str="gpt", reply=None):
-    actor_name = actor.removeprefix("gpt").capitalize()
+    actor_name = actor.removeprefix("gpt")
     if not actor_name:
-      actor_name = "ChatGPT"
-    
+      actor_name = "gpt"
+    last_actor_by_uid[ctx.message.author.id] = actor
     if reply is None:
-      msg = await ctx.reply(f"{actor_name} is thinking...")
+      msg = await ctx.reply(f"{actor_name.capitalize()} is thinking...")
       self.reply_cache[ctx.message.id] = msg
       self.ctx_cache[ctx.message.id] = ctx
       self.actor_cache[ctx.message.id] = actor
